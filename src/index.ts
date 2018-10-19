@@ -1,61 +1,61 @@
 import { Application } from 'probot'
 
 export = (app: Application) => {
-  app.on('*', async context => {
-    // context.log({ event: context.event, action: context.payload.action })
-
-    context.log({ payload: context.payload })
-
+  app.on(['pull_request.opened', 'pull_request.edited', 'pull_request.synchronize'], async context => {
     const { owner, repo } = context.repo()
-    const { ref, sha } = context.payload.pull_request.head
+    const { base, head } = context.payload.pull_request
 
-    const file = `${ref}:README.md`
+    const compareCommitsResult = await context.github.repos.compareCommits(context.repo({ base: base.sha, head: head.sha }))
+    const changedFiles = compareCommitsResult.data.files
 
-    let blobQuery = `
-      query($owner: String!, $repo: String!, $file: String!) { 
+    let blobQueries = ''
+
+    changedFiles.forEach((file: any, index: number) => {
+      blobQueries += `blob${index}: object(expression: "${head.sha}:${file.filename}") { ... on Blob { byteSize } }`
+    });
+
+    const blobQuery = `
+      query($owner: String!, $repo: String!) { 
         organization(login: $owner) {
           repository(name: $repo) {
-            object(expression: $file) {
-              ... on Blob {
-                byteSize
-              }
-            }
+            ${blobQueries}
           }
         }
       }
     `
 
-    let blobQueryResult = await context.github.query(blobQuery, { owner, repo, file }) as any
+    const blobQueryResult = await context.github.query(blobQuery, { owner, repo }) as any
 
-    app.log(blobQueryResult)
-
-    let byteSize = blobQueryResult.organization.repository.object.byteSize
-
-    app.log(byteSize)
+    const byteSizes: number[] = []
+    const repositoryResult = blobQueryResult.organization.repository
+    
+    changedFiles.forEach((file: any, index: number) => {
+      byteSizes.push(repositoryResult[`blob${index}`].byteSize)
+    })
 
     let state: 'success' | 'failure';
     let description;
 
-    if (byteSize > 10) {
+    if (byteSizes.some((byteSize) => byteSize > 10)) {
       state = 'failure' as 'failure'
-      description = 'File `README.md` exceeds file size limit of 10 bytes'
+      description = 'At least one file exceeds the file size limit of 10 bytes'
     } else {
       state = 'success' as 'success'
       description = 'No files exceed file size limit of 10 bytes'
     }
 
+    app.log(state);
+
     const reposCreateStatusParams = {
       owner,
       repo,
-      sha,
+      sha: head.sha,
       state,
       target_url: 'https://github.com/steffen/file-size-checker',
       description,
       context: 'File Size Checker'
     }
 
-    const createStatusResult = await context.github.repos.createStatus(reposCreateStatusParams)
-
-    app.log(createStatusResult)
+    await context.github.repos.createStatus(reposCreateStatusParams)
   })
 }
