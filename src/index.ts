@@ -1,7 +1,22 @@
 import { Application } from 'probot'
 
+interface AppConfig {
+  fileSizeLimit: string
+}
+
 export = (app: Application) => {
   app.on(['pull_request.opened', 'pull_request.edited', 'pull_request.synchronize'], async context => {
+    const configFileName = 'file_size_checker.yml'
+    let config: AppConfig | null
+
+    config = await context.config<AppConfig | null>(configFileName)
+  
+    if (!config) {
+      throw new Error(`The "${configFileName}" configuration file failed to load.`)
+    }
+
+    const fileSizeLimit = config.fileSizeLimit
+
     const { owner, repo } = context.repo()
     const { base, head } = context.payload.pull_request
 
@@ -28,6 +43,8 @@ export = (app: Application) => {
 
     const byteSizes: number[] = []
     const repositoryResult = blobQueryResult.organization.repository
+
+    app.log(repositoryResult)
     
     changedFiles.forEach((file: any, index: number) => {
       byteSizes.push(repositoryResult[`blob${index}`].byteSize)
@@ -36,12 +53,12 @@ export = (app: Application) => {
     let state: 'success' | 'failure';
     let description;
 
-    if (byteSizes.some((byteSize) => byteSize > 10)) {
+    if (byteSizes.some((byteSize) => byteSize > parseInt(fileSizeLimit))) {
       state = 'failure' as 'failure'
-      description = 'At least one file exceeds the file size limit of 10 bytes'
+      description = `At least one file exceeds the file size limit of ${fileSizeLimit} bytes`
     } else {
       state = 'success' as 'success'
-      description = 'No files exceed file size limit of 10 bytes'
+      description = `No files exceed file size limit of ${fileSizeLimit} bytes`
     }
 
     app.log(state);
