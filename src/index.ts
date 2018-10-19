@@ -1,4 +1,5 @@
 import { Application } from 'probot'
+import bytes from 'bytes'
 
 interface AppConfig {
   fileSizeLimit: string
@@ -15,7 +16,7 @@ export = (app: Application) => {
       throw new Error(`The "${configFileName}" configuration file failed to load.`)
     }
 
-    const fileSizeLimit = config.fileSizeLimit
+    const fileSizeLimit = bytes.parse(config.fileSizeLimit)
 
     const { owner, repo } = context.repo()
     const { base, head } = context.payload.pull_request
@@ -53,12 +54,12 @@ export = (app: Application) => {
     let state: 'success' | 'failure';
     let description;
 
-    if (byteSizes.some((byteSize) => byteSize > parseInt(fileSizeLimit))) {
+    if (byteSizes.some((byteSize) => byteSize > fileSizeLimit)) {
       state = 'failure' as 'failure'
-      description = `At least one file exceeds the file size limit of ${fileSizeLimit} bytes`
+      description = `At least one file exceeds the file size limit of ${bytes(fileSizeLimit)}.`
     } else {
       state = 'success' as 'success'
-      description = `No files exceed file size limit of ${fileSizeLimit} bytes`
+      description = `No files exceed file size limit of ${bytes(fileSizeLimit)}.`
     }
 
     app.log(state);

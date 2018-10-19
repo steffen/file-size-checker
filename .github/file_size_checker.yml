@@ -1,1 +1,2 @@
-fileSizeLimit: 20
+# Limit of allowed file sizes (e.g. 1024, 1KB, 1MB)
+fileSizeLimit: 2MB
